@@ -29,18 +29,22 @@ class MockASRProvider(BaseASRProvider):
         if duration <= 0.0:
             duration = 30.0
 
-        raw_words = self.sample_text.split()
-        if not raw_words:
-            raw_words = ["Silence"]
+        filename = os.path.basename(audio_path).replace(".wav", "").replace("audio_", "")
+        mock_text = (
+            f"Welcome to the speech processing pipeline for '{filename}' running in local Mock ASR mode. "
+            "The speech pipeline successfully extracted the 16kHz audio track and mapped natural pause boundaries. "
+            "To transcribe the real spoken audio word-for-word, please add your free Groq API key or OpenAI key in Settings or .env. "
+            "Sentence-snapped candidate moment generator is fully operational and ready for viral scoring."
+        )
 
+        raw_words = mock_text.split()
         word_duration = min(duration / len(raw_words), 0.5)
         current_time = 0.5
 
         words = []
         for i, word in enumerate(raw_words):
             start = round(current_time, 2)
-            # Add occasional pause between sentences
-            pause = 0.5 if word.endswith((".", "!", "?")) else 0.1
+            pause = 0.4 if word.endswith((".", "!", "?", ",")) else 0.1
             end = round(start + word_duration, 2)
             words.append(WordTimestamp(
                 word=word,
@@ -52,8 +56,8 @@ class MockASRProvider(BaseASRProvider):
 
         return ASRResult(
             words=words,
-            text=self.sample_text,
+            text=mock_text,
             language=language or "en",
             duration_s=duration,
-            version="mock-whisper-v1"
+            version="mock-whisper-demo"
         )

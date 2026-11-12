@@ -236,6 +236,8 @@ export default function Home() {
 
   const handleGenerateClips = async () => {
     setSubmitMessage(null);
+    setTranscriptData(null);
+    setCandidatesData([]);
 
     if (activeTab === "link") {
       if (!videoUrl.trim() || (!videoUrl.startsWith("http://") && !videoUrl.startsWith("https://"))) {
@@ -634,9 +636,16 @@ export default function Home() {
                 <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                 Step 4 Output: Speech Transcribed ({transcriptData.word_count} words)
               </span>
-              <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-950 border border-emerald-800 text-emerald-300">
-                Word-Level ASR Ready
-              </span>
+              <div className="flex items-center gap-2">
+                {transcriptData.full_text.includes("Mock ASR") && (
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-amber-950/60 border border-amber-800 text-amber-300 font-medium">
+                    Mock Mode (Demo)
+                  </span>
+                )}
+                <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-950 border border-emerald-800 text-emerald-300">
+                  Word-Level ASR Ready
+                </span>
+              </div>
             </div>
 
             <div className="p-3 rounded-lg bg-slate-900/90 border border-slate-800 text-xs text-slate-300 leading-relaxed font-sans max-h-36 overflow-y-auto">
