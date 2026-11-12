@@ -1,3 +1,4 @@
+import uuid
 import pytest
 from sqlalchemy import select
 from app.core.database import AsyncSessionLocal
@@ -16,14 +17,15 @@ from app.models import (
 
 @pytest.mark.asyncio
 async def test_create_and_query_user_and_video():
+    unique_email = f"clipper_{uuid.uuid4().hex[:8]}@test.com"
     async with AsyncSessionLocal() as session:
         # Create user
-        user = User(email="clipper@test.com", plan="clipper")
+        user = User(email=unique_email, plan="clipper")
         session.add(user)
         await session.commit()
         await session.refresh(user)
         assert user.id is not None
-        assert user.email == "clipper@test.com"
+        assert user.email == unique_email
 
         # Create YouTube Link Video
         video = Video(
@@ -116,8 +118,9 @@ async def test_pipeline_entities_and_scoring():
 
 @pytest.mark.asyncio
 async def test_youtube_integration_models():
+    unique_email = f"youtube_creator_{uuid.uuid4().hex[:8]}@test.com"
     async with AsyncSessionLocal() as session:
-        user = User(email="youtube_creator@test.com", plan="pro")
+        user = User(email=unique_email, plan="pro")
         session.add(user)
         await session.commit()
         await session.refresh(user)
@@ -125,7 +128,7 @@ async def test_youtube_integration_models():
         # YouTube Account
         yt_account = YouTubeAccount(
             user_id=user.id,
-            channel_id="UC_test_channel_123",
+            channel_id=f"UC_{uuid.uuid4().hex[:10]}",
             channel_title="Clipper Shorts Official",
             access_token="fake_access_token",
             refresh_token="fake_refresh_token"
@@ -133,7 +136,7 @@ async def test_youtube_integration_models():
         session.add(yt_account)
         await session.commit()
         await session.refresh(yt_account)
-        assert yt_account.channel_id == "UC_test_channel_123"
+        assert yt_account.user_id == user.id
 
         # Video & Candidate & Clip
         video = Video(source_type="upload", title="Podcast Clip Source")
