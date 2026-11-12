@@ -86,6 +86,16 @@ class JobQueueEngine:
 
                 await session.commit()
 
+    async def fail_job(self, job_id: str, error: str):
+        """Mark a job as failed with a detailed error message."""
+        await self.update_job_progress(
+            job_id,
+            stage="error",
+            progress=0.0,
+            status="failed",
+            error=error
+        )
+
     async def _process_queue(self):
         logger.info("JobQueueEngine background worker started.")
         while self._is_running:
