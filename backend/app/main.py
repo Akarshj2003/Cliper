@@ -5,6 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
 from app.core.database import engine, Base
 from app.api.health import router as health_router
+from app.api.upload import router as upload_router
+from app.services.queue import get_job_queue
 
 settings = get_settings()
 
@@ -22,9 +24,14 @@ async def lifespan(app: FastAPI):
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
+    # Start background job queue worker
+    job_queue = get_job_queue()
+    job_queue.start()
+
     yield
 
     # Cleanup resources
+    await job_queue.stop()
     await engine.dispose()
 
 
@@ -46,6 +53,7 @@ app.add_middleware(
 
 # Register routes
 app.include_router(health_router, prefix="/api")
+app.include_router(upload_router, prefix="/api")
 
 
 @app.get("/")

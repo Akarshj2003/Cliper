@@ -14,9 +14,19 @@ import {
   FileVideo,
   X,
   AlertCircle,
-  ExternalLink,
-  Loader2
+  Loader2,
+  Clock,
+  Activity
 } from "lucide-react";
+
+interface JobState {
+  id: string;
+  video_id: string;
+  stage: string;
+  status: string;
+  progress: number;
+  error?: string | null;
+}
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<"upload" | "link">("link");
@@ -26,6 +36,7 @@ export default function Home() {
   const [submitMessage, setSubmitMessage] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
   const [showYoutubeModal, setShowYoutubeModal] = useState(false);
   const [isYoutubeConnected, setIsYoutubeConnected] = useState(false);
+  const [activeJob, setActiveJob] = useState<JobState | null>(null);
   const [systemStatus, setSystemStatus] = useState<{
     status: string;
     database: string;
@@ -42,7 +53,7 @@ export default function Home() {
   const checkHealth = () => {
     fetch("http://localhost:8000/api/health")
       .then((res) => {
-        if (!res.ok) throw new Error("Backend responded with error");
+        if (!res.ok) throw new Error("Backend offline");
         return res.json();
       })
       .then((data) => {
@@ -62,6 +73,33 @@ export default function Home() {
     const interval = setInterval(checkHealth, 5000);
     return () => clearInterval(interval);
   }, []);
+
+  // Poll active job status
+  useEffect(() => {
+    if (!activeJob?.id || activeJob.status === "completed" || activeJob.status === "failed") {
+      return;
+    }
+
+    const jobPoller = setInterval(async () => {
+      try {
+        const res = await fetch(`http://localhost:8000/api/jobs/${activeJob.id}`);
+        if (res.ok) {
+          const data = await res.json();
+          setActiveJob(data);
+          if (data.status === "completed") {
+            setSubmitMessage({
+              type: "success",
+              text: `Pipeline stage "${data.stage}" completed successfully! Ready for AI transcription & scoring.`
+            });
+          }
+        }
+      } catch (err) {
+        console.error("Job poll error:", err);
+      }
+    }, 1500);
+
+    return () => clearInterval(jobPoller);
+  }, [activeJob?.id, activeJob?.status]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -90,19 +128,44 @@ export default function Home() {
     setSubmitMessage(null);
 
     if (activeTab === "link") {
-      if (!videoUrl.trim()) {
-        setSubmitMessage({
-          type: "error",
-          text: "Please enter a valid video or YouTube URL to clip."
-        });
-        return;
-      }
-      if (!videoUrl.startsWith("http://") && !videoUrl.startsWith("https://")) {
+      if (!videoUrl.trim() || (!videoUrl.startsWith("http://") && !videoUrl.startsWith("https://"))) {
         setSubmitMessage({
           type: "error",
           text: "Please enter a valid URL starting with https://"
         });
         return;
+      }
+
+      setIsSubmitting(true);
+      try {
+        const res = await fetch("http://localhost:8000/api/ingest/url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: videoUrl.trim() }),
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Failed to ingest URL");
+
+        setActiveJob({
+          id: data.job_id,
+          video_id: data.video_id,
+          stage: "queued",
+          status: "queued",
+          progress: 5.0,
+        });
+
+        setSubmitMessage({
+          type: "success",
+          text: `Enqueued: "${data.title}" (${data.duration_s ? Math.round(data.duration_s) + 's' : 'fetching'}) into processing queue.`
+        });
+      } catch (err: any) {
+        setSubmitMessage({
+          type: "error",
+          text: err.message || "Failed to ingest URL. Make sure the backend server is running."
+        });
+      } finally {
+        setIsSubmitting(false);
       }
     } else {
       if (!selectedFile) {
@@ -112,26 +175,41 @@ export default function Home() {
         });
         return;
       }
+
+      setIsSubmitting(true);
+      try {
+        const formData = new FormData();
+        formData.append("file", selectedFile);
+
+        const res = await fetch("http://localhost:8000/api/upload/file", {
+          method: "POST",
+          body: formData,
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Upload failed");
+
+        setActiveJob({
+          id: data.job_id,
+          video_id: data.video_id,
+          stage: "audio_extract",
+          status: "queued",
+          progress: 10.0,
+        });
+
+        setSubmitMessage({
+          type: "success",
+          text: `File "${selectedFile.name}" uploaded successfully! Video ID: ${data.video_id}`
+        });
+      } catch (err: any) {
+        setSubmitMessage({
+          type: "error",
+          text: err.message || "Upload failed. Ensure backend API is active."
+        });
+      } finally {
+        setIsSubmitting(false);
+      }
     }
-
-    setIsSubmitting(true);
-    setSubmitMessage({
-      type: "info",
-      text: activeTab === "link"
-        ? `Validating URL: ${videoUrl} ... Ready for Step 3 queue endpoint!`
-        : `Ready to upload ${selectedFile?.name}! Upload & signed URL endpoint will be activated in Step 3.`
-    });
-
-    // Simulated short interaction
-    setTimeout(() => {
-      setIsSubmitting(false);
-      setSubmitMessage({
-        type: "success",
-        text: activeTab === "link"
-          ? `Link received successfully! Ingestion pipeline (yt-dlp) is configured.`
-          : `File "${selectedFile?.name}" verified and ready for database staging in Step 2 & 3!`
-      });
-    }, 1200);
   };
 
   return (
@@ -168,7 +246,7 @@ export default function Home() {
 
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 text-xs">
             <Server className={`w-3.5 h-3.5 ${systemStatus ? "text-emerald-400" : "text-amber-400 animate-pulse"}`} />
-            <span>API: {systemStatus ? "Online (Port 8000)" : "Offline (Start backend)"}</span>
+            <span>API: {systemStatus ? "Online (Port 8000)" : "Offline"}</span>
           </div>
         </div>
       </header>
@@ -249,7 +327,7 @@ export default function Home() {
               {isSubmitting ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Analyzing Link...
+                  Fetching Video & Enqueuing Pipeline...
                 </>
               ) : (
                 <>
@@ -309,15 +387,38 @@ export default function Home() {
               {isSubmitting ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Preparing Video Upload...
+                  Uploading Video to Storage...
                 </>
               ) : (
                 <>
                   <Scissors className="w-4 h-4" />
-                  Generate Clips from File
+                  Upload & Enqueue for Clipping
                 </>
               )}
             </button>
+          </div>
+        )}
+
+        {/* Live Job Progress Bar */}
+        {activeJob && (
+          <div className="mt-5 p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="flex items-center gap-2 text-slate-300">
+                <Activity className="w-3.5 h-3.5 text-purple-400 animate-spin" />
+                Pipeline Stage: <span className="text-purple-400 font-mono capitalize">{activeJob.stage}</span>
+              </span>
+              <span className="text-slate-400">{Math.round(activeJob.progress)}%</span>
+            </div>
+            <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+              <div
+                className="bg-gradient-to-r from-purple-600 to-indigo-500 h-2 rounded-full transition-all duration-500"
+                style={{ width: `${Math.max(activeJob.progress, 5)}%` }}
+              />
+            </div>
+            <div className="flex justify-between text-[11px] text-slate-500 pt-1">
+              <span>Job ID: {activeJob.id.slice(0, 8)}...</span>
+              <span className="capitalize">Status: {activeJob.status}</span>
+            </div>
           </div>
         )}
 
@@ -333,14 +434,14 @@ export default function Home() {
             }`}
           >
             <div className="flex items-center gap-2">
-              {submitMessage.type === "success" && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-              {submitMessage.type === "error" && <AlertCircle className="w-4 h-4 text-red-400" />}
-              {submitMessage.type === "info" && <Sparkles className="w-4 h-4 text-purple-400" />}
+              {submitMessage.type === "success" && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />}
+              {submitMessage.type === "error" && <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />}
+              {submitMessage.type === "info" && <Sparkles className="w-4 h-4 text-purple-400 shrink-0" />}
               <span>{submitMessage.text}</span>
             </div>
             <button
               onClick={() => setSubmitMessage(null)}
-              className="text-slate-400 hover:text-white"
+              className="text-slate-400 hover:text-white shrink-0 ml-2"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -444,7 +545,7 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="border-t border-slate-800/80 pt-6 text-center text-xs text-slate-500">
-        ClipViral Monorepo Architecture &bull; Step 1: Project Setup &bull; Ready for Step 2 DB Migrations
+        ClipViral Monorepo Architecture &bull; Step 3 Complete (Upload & Ingestion Queue) &bull; Ready for Step 4 Audio Extraction & Whisper ASR
       </footer>
     </main>
   );
