@@ -199,10 +199,18 @@ async def ingest_video_url(
         meta = await asyncio.to_thread(downloader.extract_metadata, payload.url)
     except Exception as e:
         err_msg = str(e)
-        if "confirm you’re not a bot" in err_msg or "Sign in to confirm" in err_msg or "Sign in to confirm you're not a bot" in err_msg:
+        bot_keywords = [
+            "confirm you’re not a bot",
+            "confirm you're not a bot",
+            "sign in to confirm",
+            "requested format is not available",
+            "login_required",
+            "only images are available",
+        ]
+        if any(kw in err_msg.lower() for kw in bot_keywords):
             raise HTTPException(
                 status_code=400,
-                detail="YouTube requires authentication ('Sign in to confirm you’re not a bot'). Click 'YouTube Sign-in' at the top right to configure your cookies, or switch to the 'Upload File' tab to process your video directly without restrictions."
+                detail="YouTube requires authentication ('Sign in to confirm you’re not a bot' / restricted format). Your cookies may be missing LOGIN_INFO or expired. Please export fresh cookies while logged in to youtube.com, or switch to the 'Upload File' tab to process your video file directly with zero restrictions."
             )
         raise HTTPException(status_code=400, detail=f"Failed to fetch video information: {err_msg}")
 
@@ -230,19 +238,31 @@ async def ingest_video_url(
 
     # Async worker task for downloading video and continuing to ASR
     async def download_and_process_handler(job_id: str, url: str, vid_id: str):
-        await queue.update_job_progress(job_id, stage="download", progress=20.0)
-        dl_info = await asyncio.to_thread(downloader.download_video, url)
+        try:
+            await queue.update_job_progress(job_id, stage="download", progress=20.0)
+            dl_info = await asyncio.to_thread(downloader.download_video, url)
 
-        async with AsyncSessionLocal() as s:
-            res = await s.execute(select(Video).where(Video.id == vid_id))
-            v = res.scalar_one_or_none()
-            if v:
-                v.storage_url = dl_info["file_path"]
-                v.status = "downloaded"
-                await s.commit()
+            async with AsyncSessionLocal() as s:
+                res = await s.execute(select(Video).where(Video.id == vid_id))
+                v = res.scalar_one_or_none()
+                if v:
+                    v.storage_url = dl_info["file_path"]
+                    v.status = "downloaded"
+                    await s.commit()
 
-        # Chain immediately into stage 1 & 2
-        await run_pipeline_stage1_and_2(job_id, vid_id)
+            # Chain immediately into stage 1 & 2
+            await run_pipeline_stage1_and_2(job_id, vid_id)
+        except Exception as e:
+            err_msg = str(e)
+            if any(term in err_msg.lower() for term in ["bot", "sign in", "no video formats", "login_required", "requested format"]):
+                friendly_err = (
+                    "YouTube blocked video stream download ('Sign in to confirm you’re not a bot'). "
+                    "The current cookies are unauthenticated or expired (missing LOGIN_INFO). "
+                    "Please sign in to YouTube and re-export your cookies, or switch to the 'Upload File' tab to process the video directly."
+                )
+                await queue.fail_job(job_id, friendly_err)
+                return
+            raise
 
     await queue.enqueue(job.id, download_and_process_handler, payload.url, video.id)
 

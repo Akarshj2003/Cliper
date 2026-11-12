@@ -33,6 +33,7 @@ class VideoDownloaderService:
             "quiet": True,
             "no_warnings": True,
             "skip_download": True,
+            "ignore_no_formats_error": True,
             "ffmpeg_location": self.ffmpeg_path,
             "js_runtimes": {"node": {}},
         }

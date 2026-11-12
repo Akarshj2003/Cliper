@@ -581,9 +581,44 @@ export default function Home() {
               </span>
             </div>
             {activeJob.error && (
-              <p className="text-[11px] text-red-400 bg-red-950/40 p-2 rounded-lg border border-red-900/40 font-mono break-words mt-1">
-                {activeJob.error}
-              </p>
+              <div className="mt-2 space-y-2">
+                <p className="text-[11px] text-red-400 bg-red-950/40 p-2.5 rounded-lg border border-red-900/40 font-sans leading-relaxed break-words">
+                  {activeJob.error}
+                </p>
+                {(activeJob.error.toLowerCase().includes("bot") || 
+                  activeJob.error.toLowerCase().includes("sign in") || 
+                  activeJob.error.toLowerCase().includes("cookies") ||
+                  activeJob.error.toLowerCase().includes("stream")) && (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveTab("upload");
+                        setActiveJob(null);
+                        setSubmitMessage({
+                          type: "info",
+                          text: "Switched to File Upload: Drop your video file here to run through the full pipeline with zero YouTube restrictions."
+                        });
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow transition cursor-pointer"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      Switch to Direct File Upload (100% Reliable)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setModalTab("cookies");
+                        setShowYoutubeModal(true);
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow transition cursor-pointer"
+                    >
+                      <Key className="w-3.5 h-3.5" />
+                      Re-export YouTube Cookies
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         )}
@@ -688,20 +723,12 @@ export default function Home() {
                 <div className="space-y-2">
                   <p className="font-medium leading-relaxed">{submitMessage.text}</p>
                   
-                  {/* Interactive Action Triggers if YouTube Bot Verification is needed */}
-                  {(submitMessage.text.toLowerCase().includes("bot") || submitMessage.text.toLowerCase().includes("sign in")) && (
+                  {/* Interactive Action Triggers if YouTube Bot / Format Verification is needed */}
+                  {(submitMessage.text.toLowerCase().includes("bot") || 
+                    submitMessage.text.toLowerCase().includes("sign in") ||
+                    submitMessage.text.toLowerCase().includes("format") ||
+                    submitMessage.text.toLowerCase().includes("restricted")) && (
                     <div className="pt-2 flex flex-wrap gap-2.5">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setModalTab("cookies");
-                          setShowYoutubeModal(true);
-                        }}
-                        className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow transition cursor-pointer"
-                      >
-                        <Key className="w-3.5 h-3.5" />
-                        Configure YouTube Sign-In / Cookies
-                      </button>
                       <button
                         type="button"
                         onClick={() => {
@@ -714,7 +741,18 @@ export default function Home() {
                         className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow transition cursor-pointer"
                       >
                         <Upload className="w-3.5 h-3.5" />
-                        Switch to Direct File Upload (100% Reliable)
+                        Switch to Direct File Upload (100% Reliable & Fast)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setModalTab("cookies");
+                          setShowYoutubeModal(true);
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow transition cursor-pointer"
+                      >
+                        <Key className="w-3.5 h-3.5" />
+                        Update YouTube Cookies / Sign-In
                       </button>
                     </div>
                   )}
@@ -966,7 +1004,7 @@ export default function Home() {
                   </h4>
                   <ol className="list-decimal list-inside space-y-1 text-slate-400 pt-1">
                     <li>Install the free extension <strong>"Get cookies.txt LOCALLY"</strong> (Chrome / Edge).</li>
-                    <li>Open <strong>youtube.com</strong> in your browser while signed in.</li>
+                    <li>Open <strong>youtube.com</strong> in your browser (<strong>make sure you are signed in</strong> so it includes LOGIN_INFO).</li>
                     <li>Click the extension icon and click <strong>Export</strong>.</li>
                     <li>Upload or paste the content in the "Anti-Bot Cookies" tab.</li>
                   </ol>
