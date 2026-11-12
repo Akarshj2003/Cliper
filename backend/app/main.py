@@ -7,12 +7,16 @@ from app.core.database import engine, Base
 from app.api.health import router as health_router
 from app.api.upload import router as upload_router
 from app.services.queue import get_job_queue
+from app.core.ffmpeg_utils import ensure_ffmpeg_in_path
 
 settings = get_settings()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Ensure FFmpeg is registered in PATH
+    ensure_ffmpeg_in_path()
+
     # Ensure storage directories exist
     os.makedirs(settings.STORAGE_DIR, exist_ok=True)
     os.makedirs(settings.YT_DLP_STORAGE_PATH, exist_ok=True)

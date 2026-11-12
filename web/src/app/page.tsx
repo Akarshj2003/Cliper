@@ -91,6 +91,11 @@ export default function Home() {
               type: "success",
               text: `Pipeline stage "${data.stage}" completed successfully! Ready for AI transcription & scoring.`
             });
+          } else if (data.status === "failed") {
+            setSubmitMessage({
+              type: "error",
+              text: `Pipeline Error: ${data.error || "Video processing encountered an issue."}`
+            });
           }
         }
       } catch (err) {
@@ -417,8 +422,15 @@ export default function Home() {
             </div>
             <div className="flex justify-between text-[11px] text-slate-500 pt-1">
               <span>Job ID: {activeJob.id.slice(0, 8)}...</span>
-              <span className="capitalize">Status: {activeJob.status}</span>
+              <span className={`capitalize ${activeJob.status === "failed" ? "text-red-400 font-semibold" : ""}`}>
+                Status: {activeJob.status}
+              </span>
             </div>
+            {activeJob.error && (
+              <p className="text-[11px] text-red-400 bg-red-950/40 p-2 rounded-lg border border-red-900/40 font-mono break-words mt-1">
+                {activeJob.error}
+              </p>
+            )}
           </div>
         )}
 

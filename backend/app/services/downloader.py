@@ -4,6 +4,7 @@ import logging
 from typing import Dict, Any, Optional
 import yt_dlp
 from app.core.config import get_settings
+from app.core.ffmpeg_utils import ensure_ffmpeg_in_path, find_ffmpeg_binary
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -13,6 +14,7 @@ class VideoDownloaderService:
     def __init__(self, download_dir: Optional[str] = None):
         self.download_dir = download_dir or settings.YT_DLP_STORAGE_PATH
         os.makedirs(self.download_dir, exist_ok=True)
+        self.ffmpeg_path = ensure_ffmpeg_in_path()
 
     def extract_metadata(self, url: str) -> Dict[str, Any]:
         """Fetch video metadata without downloading the full payload."""
@@ -20,6 +22,7 @@ class VideoDownloaderService:
             "quiet": True,
             "no_warnings": True,
             "skip_download": True,
+            "ffmpeg_location": self.ffmpeg_path,
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -28,7 +31,7 @@ class VideoDownloaderService:
                 duration = info.get("duration", 0)
                 title = info.get("title", "Untitled Video")
 
-                if duration > settings.YT_DLP_MAX_DURATION_SECONDS:
+                if duration and duration > settings.YT_DLP_MAX_DURATION_SECONDS:
                     raise ValueError(
                         f"Video duration ({duration}s) exceeds the maximum allowed limit of {settings.YT_DLP_MAX_DURATION_SECONDS}s."
                     )
@@ -56,6 +59,7 @@ class VideoDownloaderService:
             "quiet": True,
             "no_warnings": True,
             "merge_output_format": "mp4",
+            "ffmpeg_location": self.ffmpeg_path,
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
