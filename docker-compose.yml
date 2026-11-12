@@ -1,0 +1,99 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: clipviral_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: clipviral
+      POSTGRES_PASSWORD: clipviral_password
+      POSTGRES_DB: clipviral
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clipviral -d clipviral"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: clipviral_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: clipviral_backend
+    restart: unless-stopped
+    environment:
+      - APP_ENV=development
+      - DATABASE_URL=postgresql+asyncpg://clipviral:clipviral_password@postgres:5432/clipviral
+      - REDIS_URL=redis://redis:6379/0
+      - STORAGE_DIR=/app/storage
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - shared_storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: clipviral_worker
+    restart: unless-stopped
+    command: ["celery", "-A", "app.worker", "worker", "--loglevel=info"]
+    environment:
+      - APP_ENV=development
+      - DATABASE_URL=postgresql+asyncpg://clipviral:clipviral_password@postgres:5432/clipviral
+      - REDIS_URL=redis://redis:6379/0
+      - STORAGE_DIR=/app/storage
+    volumes:
+      - ./backend:/app
+      - shared_storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: clipviral_web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    volumes:
+      - ./web:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  redis_data:
+  shared_storage:
