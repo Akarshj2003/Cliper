@@ -37,6 +37,11 @@ export default function Home() {
   const [showYoutubeModal, setShowYoutubeModal] = useState(false);
   const [isYoutubeConnected, setIsYoutubeConnected] = useState(false);
   const [activeJob, setActiveJob] = useState<JobState | null>(null);
+  const [transcriptData, setTranscriptData] = useState<{
+    full_text: string;
+    words: Array<{ word: string; start: number; end: number }>;
+    word_count: number;
+  } | null>(null);
   const [systemStatus, setSystemStatus] = useState<{
     status: string;
     database: string;
@@ -89,8 +94,12 @@ export default function Home() {
           if (data.status === "completed") {
             setSubmitMessage({
               type: "success",
-              text: `Pipeline stage "${data.stage}" completed successfully! Ready for AI transcription & scoring.`
+              text: `Pipeline Stage 1 & 2 completed! Audio extracted and transcribed into word-level timestamps.`
             });
+            fetch(`http://localhost:8000/api/videos/${data.video_id}/transcript`)
+              .then((r) => r.json())
+              .then((t) => setTranscriptData(t))
+              .catch(() => {});
           } else if (data.status === "failed") {
             setSubmitMessage({
               type: "error",
@@ -431,6 +440,47 @@ export default function Home() {
                 {activeJob.error}
               </p>
             )}
+          </div>
+        )}
+
+        {/* Transcribed Text & Word Timestamps Preview (Step 4 Output) */}
+        {transcriptData && (
+          <div className="mt-5 p-5 rounded-xl bg-slate-950 border border-purple-900/50 space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+              <span className="text-xs font-semibold text-purple-300 flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                Step 4 Output: Speech Transcribed ({transcriptData.word_count} words)
+              </span>
+              <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-950 border border-emerald-800 text-emerald-300">
+                Word-Level ASR Ready
+              </span>
+            </div>
+
+            <div className="p-3 rounded-lg bg-slate-900/90 border border-slate-800 text-xs text-slate-300 leading-relaxed font-sans max-h-36 overflow-y-auto">
+              {transcriptData.full_text}
+            </div>
+
+            <div className="pt-1">
+              <span className="text-[11px] text-slate-400 font-medium block mb-1.5">
+                Word Timestamps Sample (Start ➔ End):
+              </span>
+              <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                {transcriptData.words.slice(0, 20).map((w, idx) => (
+                  <span
+                    key={idx}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-[11px] text-slate-300 font-mono"
+                  >
+                    <span>{w.word}</span>
+                    <span className="text-[9px] text-purple-400">[{w.start}s - {w.end}s]</span>
+                  </span>
+                ))}
+                {transcriptData.words.length > 20 && (
+                  <span className="text-[10px] text-slate-500 self-center">
+                    +{transcriptData.words.length - 20} more words
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
         )}
 
