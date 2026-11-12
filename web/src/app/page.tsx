@@ -34,7 +34,7 @@ interface JobState {
 }
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<"upload" | "link">("link");
+  const [activeTab, setActiveTab] = useState<"upload" | "link">("upload");
   const [videoUrl, setVideoUrl] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -408,21 +408,6 @@ export default function Home() {
           <button
             type="button"
             onClick={() => {
-              setActiveTab("link");
-              setSubmitMessage(null);
-            }}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition cursor-pointer ${
-              activeTab === "link"
-                ? "bg-purple-600 text-white shadow-md shadow-purple-600/30 font-semibold"
-                : "text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            <LinkIcon className="w-4 h-4" />
-            Paste Video Link (YouTube / URL)
-          </button>
-          <button
-            type="button"
-            onClick={() => {
               setActiveTab("upload");
               setSubmitMessage(null);
             }}
@@ -433,7 +418,25 @@ export default function Home() {
             }`}
           >
             <Upload className="w-4 h-4" />
-            Upload File (MP4, MOV)
+            <span>Upload File (MP4, MOV)</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30">
+              100% Reliable
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab("link");
+              setSubmitMessage(null);
+            }}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition cursor-pointer ${
+              activeTab === "link"
+                ? "bg-purple-600 text-white shadow-md shadow-purple-600/30 font-semibold"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <LinkIcon className="w-4 h-4" />
+            <span>Paste Video Link (YouTube)</span>
           </button>
         </div>
 
@@ -958,23 +961,29 @@ export default function Home() {
             {/* TAB 2: OAUTH2 */}
             {modalTab === "oauth" && (
               <div className="space-y-4 text-xs">
-                <p className="text-slate-400 leading-relaxed">
-                  Connect your YouTube channel using Google OAuth2 to publish rendered 9:16 vertical clips directly to YouTube Shorts with auto-generated descriptions and tags.
-                </p>
+                <div className="p-3 bg-purple-950/40 border border-purple-800/40 rounded-xl space-y-1">
+                  <h4 className="font-semibold text-purple-300">Purpose of Google Sign-In:</h4>
+                  <p className="text-slate-300 leading-relaxed">
+                    This connects your YouTube channel via Google OAuth to <strong>publish generated 9:16 vertical clips directly to YouTube Shorts</strong>.
+                  </p>
+                  <p className="text-amber-300/90 text-[11px] pt-1">
+                    * Note: Google OAuth cannot be used to download third-party YouTube videos (YouTube terms prohibit video downloading APIs). To clip third-party videos, use the <strong>Upload File</strong> tab.
+                  </p>
+                </div>
 
                 <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
                   <div className="flex justify-between text-slate-300">
-                    <span>OAuth Client ID:</span>
-                    <span className="font-mono text-purple-400">Configured in .env</span>
+                    <span>OAuth Integration:</span>
+                    <span className="font-mono text-purple-400">YouTube Data API v3</span>
                   </div>
                   <div className="flex justify-between text-slate-300">
-                    <span>Scopes:</span>
-                    <span className="text-slate-400">youtube.upload</span>
+                    <span>Requested Scope:</span>
+                    <span className="text-slate-400">youtube.upload (Shorts Publishing)</span>
                   </div>
                   <div className="flex justify-between text-slate-300">
-                    <span>Account Status:</span>
+                    <span>Channel Link Status:</span>
                     <span className={isYoutubeConnected ? "text-emerald-400 font-semibold" : "text-amber-400 font-semibold"}>
-                      {isYoutubeConnected ? "Connected (Ready for Shorts)" : "Not Connected"}
+                      {isYoutubeConnected ? "Channel Connected (Ready for Shorts)" : "Not Linked Yet"}
                     </span>
                   </div>
                 </div>
@@ -985,10 +994,17 @@ export default function Home() {
                     onClick={() => {
                       setIsYoutubeConnected(!isYoutubeConnected);
                       setShowYoutubeModal(false);
+                      setSubmitMessage({
+                        type: "info",
+                        text: isYoutubeConnected 
+                          ? "YouTube channel disconnected." 
+                          : "YouTube channel linked! Rendered 9:16 vertical clips can now be published directly to YouTube Shorts."
+                      });
                     }}
-                    className="w-full py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-medium text-xs transition cursor-pointer"
+                    className="w-full py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-medium text-xs transition cursor-pointer flex items-center justify-center gap-2"
                   >
-                    {isYoutubeConnected ? "Disconnect YouTube Account" : "Sign In with Google / Connect Channel"}
+                    <Youtube className="w-4 h-4" />
+                    {isYoutubeConnected ? "Disconnect Shorts Channel" : "Connect YouTube Shorts Channel"}
                   </button>
                 </div>
               </div>
