@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+from app.core.config import get_settings
 from app.core.database import get_db, AsyncSessionLocal
 from app.models import Video, Job, Transcript, Candidate
 from app.services.storage import get_storage_service, LocalStorageService
@@ -14,6 +15,7 @@ from app.services.queue import get_job_queue
 from app.services.pipeline import run_pipeline_stage1_and_2
 
 router = APIRouter(tags=["Ingestion & Pipeline Stages 1-2"])
+settings = get_settings()
 
 
 # Pydantic Schemas
@@ -25,6 +27,95 @@ class SignedUrlRequest(BaseModel):
 class UrlIngestRequest(BaseModel):
     url: str
     user_id: Optional[str] = None
+
+
+class CookiePayload(BaseModel):
+    cookies_content: str
+
+
+@router.get("/auth/cookies/status")
+async def get_cookie_status():
+    """Check if YouTube cookies are configured on the server."""
+    cookie_paths = [
+        os.path.abspath("cookies.txt"),
+        os.path.join(settings.STORAGE_DIR, "cookies.txt"),
+    ]
+    for p in cookie_paths:
+        if os.path.isfile(p) and os.path.getsize(p) > 0:
+            return {
+                "has_cookies": True,
+                "cookie_file": p,
+                "size_bytes": os.path.getsize(p),
+            }
+    return {
+        "has_cookies": False,
+        "cookie_file": None,
+        "size_bytes": 0,
+    }
+
+
+@router.post("/auth/cookies")
+async def save_youtube_cookies(payload: CookiePayload):
+    """Save user-provided YouTube cookies to bypass bot checks."""
+    content = payload.cookies_content.strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="Cookies content cannot be empty")
+
+    cookie_paths = [
+        os.path.abspath("cookies.txt"),
+        os.path.join(settings.STORAGE_DIR, "cookies.txt"),
+    ]
+    for path in cookie_paths:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(content)
+
+    return {
+        "status": "success",
+        "message": "YouTube cookies successfully saved and active for downloads.",
+        "size_bytes": len(content),
+    }
+
+
+@router.post("/auth/cookies/upload")
+async def upload_youtube_cookies_file(file: UploadFile = File(...)):
+    """Upload a cookies.txt file directly."""
+    content = (await file.read()).decode("utf-8", errors="ignore").strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="Uploaded cookie file is empty")
+
+    cookie_paths = [
+        os.path.abspath("cookies.txt"),
+        os.path.join(settings.STORAGE_DIR, "cookies.txt"),
+    ]
+    for path in cookie_paths:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(content)
+
+    return {
+        "status": "success",
+        "message": f"Cookie file '{file.filename}' uploaded and active.",
+        "size_bytes": len(content),
+    }
+
+
+@router.delete("/auth/cookies")
+async def delete_youtube_cookies():
+    """Remove saved YouTube cookies."""
+    cookie_paths = [
+        os.path.abspath("cookies.txt"),
+        os.path.join(settings.STORAGE_DIR, "cookies.txt"),
+    ]
+    deleted = False
+    for path in cookie_paths:
+        if os.path.isfile(path):
+            try:
+                os.remove(path)
+                deleted = True
+            except Exception:
+                pass
+    return {"status": "success", "deleted": deleted}
 
 
 @router.post("/upload/signed-url")
@@ -108,10 +199,10 @@ async def ingest_video_url(
         meta = await asyncio.to_thread(downloader.extract_metadata, payload.url)
     except Exception as e:
         err_msg = str(e)
-        if "confirm you’re not a bot" in err_msg or "Sign in to confirm" in err_msg:
+        if "confirm you’re not a bot" in err_msg or "Sign in to confirm" in err_msg or "Sign in to confirm you're not a bot" in err_msg:
             raise HTTPException(
                 status_code=400,
-                detail="YouTube anti-bot challenge encountered: Please use the 'Upload File' tab to directly upload your video file (100% reliable) or place an exported cookies.txt in the backend folder."
+                detail="YouTube requires authentication ('Sign in to confirm you’re not a bot'). Click 'YouTube Sign-in' at the top right to configure your cookies, or switch to the 'Upload File' tab to process your video directly without restrictions."
             )
         raise HTTPException(status_code=400, detail=f"Failed to fetch video information: {err_msg}")
 

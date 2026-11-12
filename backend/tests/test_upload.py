@@ -97,3 +97,28 @@ async def test_url_ingest_endpoint_with_mock():
             assert data["duration_s"] == 3600.0
             assert "job_id" in data
             assert "video_id" in data
+
+
+@pytest.mark.asyncio
+async def test_cookie_endpoints():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Check initial status
+        res = await client.get("/api/auth/cookies/status")
+        assert res.status_code == 200
+
+        # Save cookies
+        cookie_text = "# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t1750000000\tLOGIN_INFO\tafakecookievalue"
+        save_res = await client.post("/api/auth/cookies", json={"cookies_content": cookie_text})
+        assert save_res.status_code == 200
+        assert save_res.json()["status"] == "success"
+
+        # Verify status is now active
+        status_res = await client.get("/api/auth/cookies/status")
+        assert status_res.status_code == 200
+        assert status_res.json()["has_cookies"] is True
+
+        # Delete cookies
+        del_res = await client.delete("/api/auth/cookies")
+        assert del_res.status_code == 200
+        assert del_res.json()["status"] == "success"

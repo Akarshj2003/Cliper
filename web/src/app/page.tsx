@@ -16,7 +16,12 @@ import {
   AlertCircle,
   Loader2,
   Clock,
-  Activity
+  Activity,
+  Key,
+  ShieldCheck,
+  FileText,
+  Trash2,
+  ExternalLink
 } from "lucide-react";
 
 interface JobState {
@@ -61,7 +66,22 @@ export default function Home() {
     };
   } | null>(null);
 
+  const [cookieStatus, setCookieStatus] = useState<{ has_cookies: boolean; size_bytes?: number } | null>(null);
+  const [cookieInput, setCookieInput] = useState("");
+  const [isSavingCookies, setIsSavingCookies] = useState(false);
+  const [cookieSaveMsg, setCookieSaveMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [modalTab, setModalTab] = useState<"cookies" | "oauth" | "guide">("cookies");
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cookieFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch YouTube Cookie status
+  const checkCookieStatus = () => {
+    fetch("http://localhost:8000/api/auth/cookies/status")
+      .then((res) => res.json())
+      .then((data) => setCookieStatus(data))
+      .catch(() => setCookieStatus(null));
+  };
 
   // Check backend health
   const checkHealth = () => {
@@ -84,9 +104,71 @@ export default function Home() {
 
   useEffect(() => {
     checkHealth();
-    const interval = setInterval(checkHealth, 5000);
+    checkCookieStatus();
+    const interval = setInterval(() => {
+      checkHealth();
+      checkCookieStatus();
+    }, 5000);
     return () => clearInterval(interval);
   }, []);
+
+  const handleSaveCookies = async () => {
+    if (!cookieInput.trim()) {
+      setCookieSaveMsg({ type: "error", text: "Please paste your cookies first." });
+      return;
+    }
+    setIsSavingCookies(true);
+    setCookieSaveMsg(null);
+    try {
+      const res = await fetch("http://localhost:8000/api/auth/cookies", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cookies_content: cookieInput.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Failed to save cookies");
+      setCookieSaveMsg({ type: "success", text: "Cookies saved successfully! YouTube downloads active." });
+      setCookieInput("");
+      checkCookieStatus();
+    } catch (err: any) {
+      setCookieSaveMsg({ type: "error", text: err.message || "Failed to save cookies" });
+    } finally {
+      setIsSavingCookies(false);
+    }
+  };
+
+  const handleUploadCookieFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || !e.target.files[0]) return;
+    const file = e.target.files[0];
+    setIsSavingCookies(true);
+    setCookieSaveMsg(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("http://localhost:8000/api/auth/cookies/upload", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Upload failed");
+      setCookieSaveMsg({ type: "success", text: `Loaded '${file.name}'! YouTube downloads active.` });
+      checkCookieStatus();
+    } catch (err: any) {
+      setCookieSaveMsg({ type: "error", text: err.message || "Failed to upload cookie file" });
+    } finally {
+      setIsSavingCookies(false);
+    }
+  };
+
+  const handleDeleteCookies = async () => {
+    try {
+      await fetch("http://localhost:8000/api/auth/cookies", { method: "DELETE" });
+      setCookieSaveMsg({ type: "success", text: "Cookies removed." });
+      checkCookieStatus();
+    } catch {
+      setCookieSaveMsg({ type: "error", text: "Failed to delete cookies" });
+    }
+  };
 
   // Poll active job status
   useEffect(() => {
@@ -261,20 +343,46 @@ export default function Home() {
         {/* YouTube Connection & API Status */}
         <div className="flex items-center gap-3">
           <button
-            onClick={() => setShowYoutubeModal(true)}
+            onClick={() => {
+              setModalTab("cookies");
+              setShowYoutubeModal(true);
+            }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition cursor-pointer ${
+              cookieStatus?.has_cookies
+                ? "bg-emerald-950/40 border-emerald-800/40 text-emerald-300 hover:bg-emerald-900/50"
+                : "bg-amber-950/40 border-amber-800/40 text-amber-300 hover:bg-amber-900/50"
+            }`}
+          >
+            {cookieStatus?.has_cookies ? (
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+            ) : (
+              <Key className="w-3.5 h-3.5 text-amber-400" />
+            )}
+            <span>
+              {cookieStatus?.has_cookies
+                ? `YouTube Session Active (${(cookieStatus.size_bytes! / 1024).toFixed(1)} KB)`
+                : "YouTube Sign-In / Bot Settings"}
+            </span>
+          </button>
+
+          <button
+            onClick={() => {
+              setModalTab("oauth");
+              setShowYoutubeModal(true);
+            }}
             className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition cursor-pointer ${
               isYoutubeConnected
-                ? "bg-emerald-950/40 border-emerald-800/40 text-emerald-300 hover:bg-emerald-900/50"
-                : "bg-red-950/40 border-red-800/40 text-red-300 hover:bg-red-900/50"
+                ? "bg-purple-950/40 border-purple-800/40 text-purple-300 hover:bg-purple-900/50"
+                : "bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800"
             }`}
           >
             <Youtube className="w-4 h-4 text-red-500" />
-            <span>{isYoutubeConnected ? "YouTube Connected" : "Connect YouTube"}</span>
+            <span>{isYoutubeConnected ? "Shorts Channel Connected" : "Connect Shorts"}</span>
           </button>
 
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 text-xs">
             <Server className={`w-3.5 h-3.5 ${systemStatus ? "text-emerald-400" : "text-amber-400 animate-pulse"}`} />
-            <span>API: {systemStatus ? "Online (Port 8000)" : "Offline"}</span>
+            <span>API: {systemStatus ? "Online" : "Offline"}</span>
           </div>
         </div>
       </header>
@@ -346,6 +454,29 @@ export default function Home() {
                 className="w-full px-4 py-3 bg-slate-950 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 text-sm transition"
               />
             </div>
+            {!cookieStatus?.has_cookies ? (
+              <div className="flex items-center justify-between text-[11px] text-slate-400 pt-0.5">
+                <span className="flex items-center gap-1">
+                  <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  YouTube bot check protection may apply.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModalTab("cookies");
+                    setShowYoutubeModal(true);
+                  }}
+                  className="text-purple-400 hover:text-purple-300 underline font-medium cursor-pointer"
+                >
+                  Configure YouTube Cookies / Sign-in
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center text-[11px] text-emerald-400 gap-1.5 pt-0.5">
+                <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                <span>YouTube authentication active (cookies loaded).</span>
+              </div>
+            )}
             <button
               type="button"
               disabled={isSubmitting}
@@ -541,7 +672,7 @@ export default function Home() {
         {/* Feedback message banner */}
         {submitMessage && (
           <div
-            className={`mt-4 p-3.5 rounded-xl text-xs flex items-center justify-between border ${
+            className={`mt-4 p-4 rounded-xl text-xs border ${
               submitMessage.type === "success"
                 ? "bg-emerald-950/60 border-emerald-800/80 text-emerald-300"
                 : submitMessage.type === "error"
@@ -549,18 +680,53 @@ export default function Home() {
                 : "bg-purple-950/60 border-purple-800/80 text-purple-300"
             }`}
           >
-            <div className="flex items-center gap-2">
-              {submitMessage.type === "success" && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />}
-              {submitMessage.type === "error" && <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />}
-              {submitMessage.type === "info" && <Sparkles className="w-4 h-4 text-purple-400 shrink-0" />}
-              <span>{submitMessage.text}</span>
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-2.5">
+                {submitMessage.type === "success" && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />}
+                {submitMessage.type === "error" && <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />}
+                {submitMessage.type === "info" && <Sparkles className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />}
+                <div className="space-y-2">
+                  <p className="font-medium leading-relaxed">{submitMessage.text}</p>
+                  
+                  {/* Interactive Action Triggers if YouTube Bot Verification is needed */}
+                  {(submitMessage.text.toLowerCase().includes("bot") || submitMessage.text.toLowerCase().includes("sign in")) && (
+                    <div className="pt-2 flex flex-wrap gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setModalTab("cookies");
+                          setShowYoutubeModal(true);
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow transition cursor-pointer"
+                      >
+                        <Key className="w-3.5 h-3.5" />
+                        Configure YouTube Sign-In / Cookies
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab("upload");
+                          setSubmitMessage({
+                            type: "info",
+                            text: "Switched to File Upload: Drop your downloaded video file here to process immediately with zero YouTube bot restrictions."
+                          });
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow transition cursor-pointer"
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                        Switch to Direct File Upload (100% Reliable)
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={() => setSubmitMessage(null)}
+                className="text-slate-400 hover:text-white shrink-0"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
-            <button
-              onClick={() => setSubmitMessage(null)}
-              className="text-slate-400 hover:text-white shrink-0 ml-2"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
           </div>
         )}
       </section>
@@ -598,63 +764,233 @@ export default function Home() {
         </div>
       </section>
 
-      {/* YouTube Channel Modal */}
+      {/* YouTube Integration & Anti-Bot Modal */}
       {showYoutubeModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl">
+            {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div className="flex items-center gap-2">
                 <Youtube className="w-5 h-5 text-red-500" />
-                <h3 className="font-bold text-white text-base">YouTube Account Integration</h3>
+                <h3 className="font-bold text-white text-base">YouTube Settings & Sign-in</h3>
               </div>
               <button
-                onClick={() => setShowYoutubeModal(false)}
-                className="text-slate-400 hover:text-white"
+                onClick={() => {
+                  setShowYoutubeModal(false);
+                  setCookieSaveMsg(null);
+                }}
+                className="text-slate-400 hover:text-white cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <p className="text-xs text-slate-400 leading-relaxed">
-              Connect your YouTube channel using Google OAuth2 to publish rendered 9:16 clips straight to YouTube Shorts with automated titles, descriptions, and tags.
-            </p>
-
-            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2 text-xs">
-              <div className="flex justify-between text-slate-300">
-                <span>OAuth Client ID:</span>
-                <span className="font-mono text-purple-400">Configured in .env</span>
-              </div>
-              <div className="flex justify-between text-slate-300">
-                <span>Permissions:</span>
-                <span className="text-slate-400">youtube.upload</span>
-              </div>
-              <div className="flex justify-between text-slate-300">
-                <span>Current Status:</span>
-                <span className={isYoutubeConnected ? "text-emerald-400 font-semibold" : "text-amber-400 font-semibold"}>
-                  {isYoutubeConnected ? "Channel Connected" : "Not Linked Yet"}
-                </span>
-              </div>
-            </div>
-
-            <div className="pt-2 flex gap-3">
+            {/* Modal Tabs */}
+            <div className="flex gap-1.5 p-1 bg-slate-950 rounded-xl border border-slate-800 text-xs">
               <button
                 type="button"
-                onClick={() => {
-                  setIsYoutubeConnected(!isYoutubeConnected);
-                  setShowYoutubeModal(false);
-                }}
-                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-medium text-xs transition cursor-pointer"
+                onClick={() => setModalTab("cookies")}
+                className={`flex-1 py-2 rounded-lg font-medium transition cursor-pointer ${
+                  modalTab === "cookies"
+                    ? "bg-purple-600 text-white font-semibold shadow"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
               >
-                {isYoutubeConnected ? "Disconnect Channel" : "Simulate Connect Channel"}
+                Anti-Bot Cookies
               </button>
               <button
                 type="button"
-                onClick={() => setShowYoutubeModal(false)}
-                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition cursor-pointer"
+                onClick={() => setModalTab("oauth")}
+                className={`flex-1 py-2 rounded-lg font-medium transition cursor-pointer ${
+                  modalTab === "oauth"
+                    ? "bg-purple-600 text-white font-semibold shadow"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
               >
-                Close
+                Shorts Channel (OAuth)
+              </button>
+              <button
+                type="button"
+                onClick={() => setModalTab("guide")}
+                className={`flex-1 py-2 rounded-lg font-medium transition cursor-pointer ${
+                  modalTab === "guide"
+                    ? "bg-purple-600 text-white font-semibold shadow"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                Quick Guide
               </button>
             </div>
+
+            {/* TAB 1: COOKIES */}
+            {modalTab === "cookies" && (
+              <div className="space-y-4">
+                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {cookieStatus?.has_cookies ? (
+                      <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-amber-400" />
+                    )}
+                    <span className="text-xs text-slate-300 font-medium">Session Status:</span>
+                  </div>
+                  <span
+                    className={`text-xs px-2.5 py-0.5 rounded-full font-semibold border ${
+                      cookieStatus?.has_cookies
+                        ? "bg-emerald-950/60 border-emerald-800/80 text-emerald-300"
+                        : "bg-amber-950/60 border-amber-800/80 text-amber-300"
+                    }`}
+                  >
+                    {cookieStatus?.has_cookies
+                      ? `Active (${(cookieStatus.size_bytes! / 1024).toFixed(1)} KB)`
+                      : "Not Configured"}
+                  </span>
+                </div>
+
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  YouTube requires authentication for automated URL downloading. Save your YouTube cookies or upload a <code className="text-purple-300 font-mono">cookies.txt</code> to download restricted videos effortlessly.
+                </p>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-medium text-slate-300">
+                      Paste cookies.txt Content:
+                    </label>
+                    <input
+                      type="file"
+                      ref={cookieFileInputRef}
+                      onChange={handleUploadCookieFile}
+                      accept=".txt"
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => cookieFileInputRef.current?.click()}
+                      className="text-xs text-purple-400 hover:text-purple-300 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Upload className="w-3 h-3" />
+                      Or Upload cookies.txt
+                    </button>
+                  </div>
+                  <textarea
+                    rows={4}
+                    value={cookieInput}
+                    onChange={(e) => setCookieInput(e.target.value)}
+                    placeholder="# Netscape HTTP Cookie File&#10;.youtube.com&#9;TRUE&#9;/&#9;TRUE&#9;..."
+                    className="w-full p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white placeholder-slate-600 focus:outline-none focus:border-purple-500 font-mono text-[11px]"
+                  />
+                </div>
+
+                {cookieSaveMsg && (
+                  <p
+                    className={`text-xs p-2.5 rounded-lg border ${
+                      cookieSaveMsg.type === "success"
+                        ? "bg-emerald-950/60 border-emerald-800 text-emerald-300"
+                        : "bg-red-950/60 border-red-800 text-red-300"
+                    }`}
+                  >
+                    {cookieSaveMsg.text}
+                  </p>
+                )}
+
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    disabled={isSavingCookies}
+                    onClick={handleSaveCookies}
+                    className="flex-1 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-medium text-xs transition cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    {isSavingCookies ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Key className="w-3.5 h-3.5" />}
+                    Save Cookies to Server
+                  </button>
+                  {cookieStatus?.has_cookies && (
+                    <button
+                      type="button"
+                      onClick={handleDeleteCookies}
+                      className="px-3 py-2.5 rounded-xl bg-red-950/40 border border-red-900/60 hover:bg-red-900/60 text-red-300 text-xs transition cursor-pointer flex items-center gap-1"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* TAB 2: OAUTH2 */}
+            {modalTab === "oauth" && (
+              <div className="space-y-4 text-xs">
+                <p className="text-slate-400 leading-relaxed">
+                  Connect your YouTube channel using Google OAuth2 to publish rendered 9:16 vertical clips directly to YouTube Shorts with auto-generated descriptions and tags.
+                </p>
+
+                <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
+                  <div className="flex justify-between text-slate-300">
+                    <span>OAuth Client ID:</span>
+                    <span className="font-mono text-purple-400">Configured in .env</span>
+                  </div>
+                  <div className="flex justify-between text-slate-300">
+                    <span>Scopes:</span>
+                    <span className="text-slate-400">youtube.upload</span>
+                  </div>
+                  <div className="flex justify-between text-slate-300">
+                    <span>Account Status:</span>
+                    <span className={isYoutubeConnected ? "text-emerald-400 font-semibold" : "text-amber-400 font-semibold"}>
+                      {isYoutubeConnected ? "Connected (Ready for Shorts)" : "Not Connected"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsYoutubeConnected(!isYoutubeConnected);
+                      setShowYoutubeModal(false);
+                    }}
+                    className="w-full py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-medium text-xs transition cursor-pointer"
+                  >
+                    {isYoutubeConnected ? "Disconnect YouTube Account" : "Sign In with Google / Connect Channel"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 3: GUIDE */}
+            {modalTab === "guide" && (
+              <div className="space-y-3 text-xs text-slate-300 leading-relaxed">
+                <div className="p-3 bg-purple-950/30 border border-purple-800/40 rounded-xl space-y-1.5">
+                  <h4 className="font-semibold text-purple-300 flex items-center gap-1">
+                    <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                    How to Export YouTube Cookies in 30 Seconds:
+                  </h4>
+                  <ol className="list-decimal list-inside space-y-1 text-slate-400 pt-1">
+                    <li>Install the free extension <strong>"Get cookies.txt LOCALLY"</strong> (Chrome / Edge).</li>
+                    <li>Open <strong>youtube.com</strong> in your browser while signed in.</li>
+                    <li>Click the extension icon and click <strong>Export</strong>.</li>
+                    <li>Upload or paste the content in the "Anti-Bot Cookies" tab.</li>
+                  </ol>
+                </div>
+
+                <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-1">
+                  <h4 className="font-semibold text-white">Zero-Friction Alternative:</h4>
+                  <p className="text-slate-400">
+                    If you don't wish to export cookies, you can download any video locally and drag & drop it into the <strong>Upload File</strong> tab. File uploads run through the full pipeline with zero bot barriers.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowYoutubeModal(false);
+                    setActiveTab("upload");
+                  }}
+                  className="w-full py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs transition cursor-pointer"
+                >
+                  Switch to Upload File Tab Now
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
