@@ -2,17 +2,18 @@ import os
 import asyncio
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.core.database import get_db
-from app.models import Video, Job
+from app.core.database import get_db, AsyncSessionLocal
+from app.models import Video, Job, Transcript
 from app.services.storage import get_storage_service, LocalStorageService
 from app.services.downloader import get_downloader_service
 from app.services.queue import get_job_queue
+from app.services.pipeline import run_pipeline_stage1_and_2
 
-router = APIRouter(tags=["Ingestion & Uploads"])
+router = APIRouter(tags=["Ingestion & Pipeline Stages 1-2"])
 
 
 # Pydantic Schemas
@@ -45,8 +46,7 @@ async def upload_video_file(
     storage: LocalStorageService = Depends(get_storage_service),
     queue = Depends(get_job_queue),
 ):
-    """Upload video directly via multipart form data."""
-    # If signed token query params were passed, verify them
+    """Upload video directly via multipart form data and run audio extraction & ASR."""
     if file_id and expires and token:
         if not storage.verify_token(file_id, expires, token):
             raise HTTPException(status_code=403, detail="Invalid or expired upload token")
@@ -79,14 +79,8 @@ async def upload_video_file(
     await db.commit()
     await db.refresh(job)
 
-    # In Step 3, we simulate job pipeline start
-    async def sample_pipeline_handler(job_id: str, vid_id: str):
-        await asyncio.sleep(1)
-        await queue.update_job_progress(job_id, stage="audio_extract", progress=25.0)
-        await asyncio.sleep(1)
-        await queue.update_job_progress(job_id, stage="transcribing", progress=50.0)
-
-    await queue.enqueue(job.id, sample_pipeline_handler, video.id)
+    # Enqueue pipeline stages 1 and 2
+    await queue.enqueue(job.id, run_pipeline_stage1_and_2, video.id)
 
     return {
         "status": "success",
@@ -105,13 +99,12 @@ async def ingest_video_url(
     downloader = Depends(get_downloader_service),
     queue = Depends(get_job_queue),
 ):
-    """Ingest a video stream or YouTube URL using yt-dlp."""
+    """Ingest a video stream or YouTube URL using yt-dlp and chain into ASR pipeline."""
     if not payload.url or not payload.url.startswith(("http://", "https://")):
         raise HTTPException(status_code=400, detail="Invalid video URL")
 
     # Extract metadata before queuing
     try:
-        # Run in threadpool so yt-dlp doesn't block the async event loop
         meta = await asyncio.to_thread(downloader.extract_metadata, payload.url)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to fetch video information: {str(e)}")
@@ -138,12 +131,11 @@ async def ingest_video_url(
     await db.commit()
     await db.refresh(job)
 
-    # Async worker task for downloading video
-    async def download_handler(job_id: str, url: str, vid_id: str):
+    # Async worker task for downloading video and continuing to ASR
+    async def download_and_process_handler(job_id: str, url: str, vid_id: str):
         await queue.update_job_progress(job_id, stage="download", progress=20.0)
         dl_info = await asyncio.to_thread(downloader.download_video, url)
-        
-        # Update video record with downloaded file path
+
         async with AsyncSessionLocal() as s:
             res = await s.execute(select(Video).where(Video.id == vid_id))
             v = res.scalar_one_or_none()
@@ -152,10 +144,10 @@ async def ingest_video_url(
                 v.status = "downloaded"
                 await s.commit()
 
-        await queue.update_job_progress(job_id, stage="audio_extract", progress=50.0)
+        # Chain immediately into stage 1 & 2
+        await run_pipeline_stage1_and_2(job_id, vid_id)
 
-    from app.core.database import AsyncSessionLocal
-    await queue.enqueue(job.id, download_handler, payload.url, video.id)
+    await queue.enqueue(job.id, download_and_process_handler, payload.url, video.id)
 
     return {
         "status": "success",
@@ -206,4 +198,22 @@ async def get_video_details(video_id: str, db: AsyncSession = Depends(get_db)):
         "language": video.language,
         "status": video.status,
         "created_at": video.created_at,
+    }
+
+
+@router.get("/videos/{video_id}/transcript")
+async def get_video_transcript(video_id: str, db: AsyncSession = Depends(get_db)):
+    """Retrieve transcribed text and word-level timestamps."""
+    result = await db.execute(select(Transcript).where(Transcript.video_id == video_id))
+    transcript = result.scalar_one_or_none()
+    if not transcript:
+        raise HTTPException(status_code=404, detail="Transcript not ready or not found")
+
+    return {
+        "id": transcript.id,
+        "video_id": transcript.video_id,
+        "version": transcript.version,
+        "full_text": transcript.full_text,
+        "words": transcript.words_json,
+        "word_count": len(transcript.words_json) if transcript.words_json else 0,
     }
