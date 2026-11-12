@@ -16,6 +16,17 @@ class VideoDownloaderService:
         os.makedirs(self.download_dir, exist_ok=True)
         self.ffmpeg_path = ensure_ffmpeg_in_path()
 
+    def _get_cookie_file(self) -> Optional[str]:
+        candidates = [
+            os.path.abspath("cookies.txt"),
+            os.path.abspath("../cookies.txt"),
+            os.path.join(settings.STORAGE_DIR, "cookies.txt"),
+        ]
+        for c in candidates:
+            if os.path.isfile(c) and os.path.getsize(c) > 0:
+                return c
+        return None
+
     def extract_metadata(self, url: str) -> Dict[str, Any]:
         """Fetch video metadata without downloading the full payload."""
         ydl_opts = {
@@ -23,7 +34,11 @@ class VideoDownloaderService:
             "no_warnings": True,
             "skip_download": True,
             "ffmpeg_location": self.ffmpeg_path,
+            "js_runtimes": {"node": {}},
         }
+        cookie_file = self._get_cookie_file()
+        if cookie_file:
+            ydl_opts["cookiefile"] = cookie_file
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             try:
@@ -54,13 +69,17 @@ class VideoDownloaderService:
         output_template = os.path.join(self.download_dir, f"{file_prefix}_%(title).50s.%(ext)s")
 
         ydl_opts = {
-            "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+            "format": "bestvideo*+bestaudio/best",
             "outtmpl": output_template,
             "quiet": True,
             "no_warnings": True,
             "merge_output_format": "mp4",
             "ffmpeg_location": self.ffmpeg_path,
+            "js_runtimes": {"node": {}},
         }
+        cookie_file = self._get_cookie_file()
+        if cookie_file:
+            ydl_opts["cookiefile"] = cookie_file
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             try:

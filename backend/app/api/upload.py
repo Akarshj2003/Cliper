@@ -107,7 +107,13 @@ async def ingest_video_url(
     try:
         meta = await asyncio.to_thread(downloader.extract_metadata, payload.url)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to fetch video information: {str(e)}")
+        err_msg = str(e)
+        if "confirm you’re not a bot" in err_msg or "Sign in to confirm" in err_msg:
+            raise HTTPException(
+                status_code=400,
+                detail="YouTube anti-bot challenge encountered: Please use the 'Upload File' tab to directly upload your video file (100% reliable) or place an exported cookies.txt in the backend folder."
+            )
+        raise HTTPException(status_code=400, detail=f"Failed to fetch video information: {err_msg}")
 
     video = Video(
         user_id=payload.user_id,
