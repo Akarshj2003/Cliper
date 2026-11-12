@@ -1,10 +1,11 @@
 import os
 import logging
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from app.core.database import AsyncSessionLocal
-from app.models import Video, Job, Transcript
+from app.models import Video, Job, Transcript, Candidate
 from app.services.audio_extractor import get_audio_extractor
 from app.services.asr import get_asr_provider
+from app.services.window_generator import get_candidate_window_generator
 from app.services.queue import get_job_queue
 
 logger = logging.getLogger(__name__)
@@ -12,9 +13,10 @@ logger = logging.getLogger(__name__)
 
 async def run_pipeline_stage1_and_2(job_id: str, video_id: str):
     """
-    Executes Pipeline Stages 1 and 2:
-      Stage 1: Extract 16kHz mono audio via FFmpeg
-      Stage 2: Transcribe speech with word-level timestamps using swappable ASR provider
+    Executes Pipeline Stages 1, 2 and 3:
+      Stage 1: Extract 16kHz mono audio via FFmpeg (Progress 50% -> 65%)
+      Stage 2: Transcribe speech with word-level timestamps (Progress 65% -> 75%)
+      Stage 3: Candidate Window Generator with sentence & pause snapping (Progress 75% -> 85%)
     """
     queue = get_job_queue()
 
@@ -28,6 +30,7 @@ async def run_pipeline_stage1_and_2(job_id: str, video_id: str):
 
     extractor = get_audio_extractor()
     asr = get_asr_provider()
+    window_generator = get_candidate_window_generator()
 
     # -------------------------------------------------------------
     # STAGE 1: FFmpeg Audio Extraction (Progress 50% -> 65%)
@@ -53,7 +56,6 @@ async def run_pipeline_stage1_and_2(job_id: str, video_id: str):
 
     # Store Transcript in Database
     async with AsyncSessionLocal() as session:
-        # Check if transcript already exists
         t_res = await session.execute(select(Transcript).where(Transcript.video_id == video_id))
         existing_transcript = t_res.scalar_one_or_none()
         if existing_transcript:
@@ -79,5 +81,43 @@ async def run_pipeline_stage1_and_2(job_id: str, video_id: str):
                 v.duration_s = duration_s
         await session.commit()
 
-    await queue.update_job_progress(job_id, stage="transcribe", progress=75.0, status="completed")
+    await queue.update_job_progress(job_id, stage="transcribe", progress=75.0)
     logger.info(f"Completed Stage 1-2 for Video {video_id} (Words: {len(asr_result.words)})")
+
+    # -------------------------------------------------------------
+    # STAGE 3: Candidate Window Generator (Progress 75% -> 85%)
+    # -------------------------------------------------------------
+    await queue.update_job_progress(job_id, stage="windowing", progress=78.0)
+    words_dicts = asr_result.words_as_dict_list()
+    windows = window_generator.generate_windows(words_dicts)
+
+    # Persist Candidate Windows to Database
+    async with AsyncSessionLocal() as session:
+        # Clear any prior candidate records for this video
+        await session.execute(delete(Candidate).where(Candidate.video_id == video_id))
+
+        for idx, win in enumerate(windows):
+            candidate = Candidate(
+                video_id=video_id,
+                start_s=win.start_s,
+                end_s=win.end_s,
+                text=win.text,
+                features_json={
+                    "duration_s": win.duration_s,
+                    "word_count": len(win.words),
+                },
+                final_score=0.0,
+                reason="Candidate window identified. Pending LLM rubric scoring.",
+                prompt_version="scoring_v1",
+                rank=None
+            )
+            session.add(candidate)
+
+        v_res = await session.execute(select(Video).where(Video.id == video_id))
+        v = v_res.scalar_one_or_none()
+        if v:
+            v.status = "candidates_generated"
+        await session.commit()
+
+    await queue.update_job_progress(job_id, stage="windowing", progress=85.0, status="completed")
+    logger.info(f"Completed Stage 3 for Video {video_id} (Candidate Windows: {len(windows)})")

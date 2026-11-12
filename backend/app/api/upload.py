@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.database import get_db, AsyncSessionLocal
-from app.models import Video, Job, Transcript
+from app.models import Video, Job, Transcript, Candidate
 from app.services.storage import get_storage_service, LocalStorageService
 from app.services.downloader import get_downloader_service
 from app.services.queue import get_job_queue
@@ -217,3 +217,26 @@ async def get_video_transcript(video_id: str, db: AsyncSession = Depends(get_db)
         "words": transcript.words_json,
         "word_count": len(transcript.words_json) if transcript.words_json else 0,
     }
+
+
+@router.get("/videos/{video_id}/candidates")
+async def get_video_candidates(video_id: str, db: AsyncSession = Depends(get_db)):
+    """Retrieve generated candidate window segments for a video."""
+    result = await db.execute(
+        select(Candidate).where(Candidate.video_id == video_id).order_by(Candidate.start_s)
+    )
+    candidates = result.scalars().all()
+    return [
+        {
+            "id": c.id,
+            "video_id": c.video_id,
+            "start_s": c.start_s,
+            "end_s": c.end_s,
+            "duration_s": round(c.end_s - c.start_s, 2),
+            "text": c.text,
+            "final_score": c.final_score,
+            "reason": c.reason,
+            "rank": c.rank,
+        }
+        for c in candidates
+    ]

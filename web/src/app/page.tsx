@@ -42,6 +42,15 @@ export default function Home() {
     words: Array<{ word: string; start: number; end: number }>;
     word_count: number;
   } | null>(null);
+  const [candidatesData, setCandidatesData] = useState<Array<{
+    id: string;
+    start_s: number;
+    end_s: number;
+    duration_s: number;
+    text: string;
+    final_score: number;
+    reason: string;
+  }>>([]);
   const [systemStatus, setSystemStatus] = useState<{
     status: string;
     database: string;
@@ -94,11 +103,16 @@ export default function Home() {
           if (data.status === "completed") {
             setSubmitMessage({
               type: "success",
-              text: `Pipeline Stage 1 & 2 completed! Audio extracted and transcribed into word-level timestamps.`
+              text: `Pipeline Stage 3 completed! Candidate viral moments (20-90s) identified with sentence/pause snapping.`
             });
             fetch(`http://localhost:8000/api/videos/${data.video_id}/transcript`)
               .then((r) => r.json())
               .then((t) => setTranscriptData(t))
+              .catch(() => {});
+
+            fetch(`http://localhost:8000/api/videos/${data.video_id}/candidates`)
+              .then((r) => r.json())
+              .then((c) => setCandidatesData(c))
               .catch(() => {});
           } else if (data.status === "failed") {
             setSubmitMessage({
@@ -480,6 +494,46 @@ export default function Home() {
                   </span>
                 )}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Candidate Windows Preview (Step 5 Output) */}
+        {candidatesData.length > 0 && (
+          <div className="mt-5 p-5 rounded-xl bg-slate-950 border border-indigo-900/50 space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+              <span className="text-xs font-semibold text-indigo-300 flex items-center gap-1.5">
+                <Scissors className="w-4 h-4 text-indigo-400" />
+                Step 5 Output: Candidate Windows ({candidatesData.length} moments found)
+              </span>
+              <span className="text-[11px] px-2 py-0.5 rounded bg-indigo-950 border border-indigo-800 text-indigo-300">
+                Sentence & Pause Snapped (20-90s)
+              </span>
+            </div>
+
+            <div className="space-y-2.5 max-h-60 overflow-y-auto pr-1">
+              {candidatesData.map((cand, idx) => (
+                <div
+                  key={cand.id || idx}
+                  className="p-3 rounded-lg bg-slate-900/80 border border-slate-800/80 space-y-1.5 hover:border-indigo-500/50 transition"
+                >
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="font-semibold text-purple-300">
+                      Candidate Moment #{idx + 1}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-mono text-[10px]">
+                      {cand.start_s}s ➔ {cand.end_s}s ({cand.duration_s}s)
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed font-sans line-clamp-2">
+                    "{cand.text}"
+                  </p>
+                  <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1">
+                    <span>Clean boundary: 100% sentence snapped</span>
+                    <span className="text-indigo-400">Ready for LLM Scoring</span>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}

@@ -81,7 +81,7 @@ async def test_pipeline_stages_1_and_2_end_to_end(sample_video_path):
 
         j_res = await session.execute(select(Job).where(Job.id == job.id))
         updated_job = j_res.scalar_one_or_none()
-        assert updated_job.stage == "transcribe"
+        assert updated_job.stage in ("transcribe", "windowing")
         assert updated_job.progress >= 75.0
 
     # Verify transcript API endpoint
